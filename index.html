@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gesichter-Collage">
+<meta name="theme-color" content="#1A1A2E">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<title>Gesichter-Collage</title>
+<style>
+  :root {
+    --primary: #1A1A2E;
+    --background: #F5F5F5;
+    --tile-bg: #333333;
+    --white: #FFFFFF;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--background);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+  }
+  body {
+    display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .view { display: none; flex-direction: column; height: 100%; flex: 1; }
+  .view.active { display: flex; }
+
+  /* Toolbar */
+  .toolbar {
+    background: var(--primary); color: var(--white);
+    padding: 14px 16px; font-size: 18px; font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .toolbar button {
+    background: none; border: none; color: var(--white);
+    font-size: 22px; padding: 4px 8px; cursor: pointer;
+  }
+
+  /* Grid view */
+  #statusText {
+    text-align: center; padding: 12px; font-size: 14px; color: #333;
+  }
+  #grid {
+    flex: 1; display: grid; grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr); gap: 4px; padding: 4px;
+    min-height: 0;
+  }
+  .tile {
+    position: relative; background: var(--tile-bg); border-radius: 4px;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .tile img {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  }
+  .tile .tile-text {
+    position: relative; color: var(--white); font-weight: 700; font-size: 11px;
+    text-align: center; padding: 6px; z-index: 1;
+  }
+  .tile .tile-check {
+    position: absolute; top: 4px; right: 4px; width: 18px; height: 18px;
+    background: #2ecc71; border-radius: 50%; color: white; font-size: 12px;
+    display: flex; align-items: center; justify-content: center; z-index: 2;
+  }
+  #btnCreateCollage {
+    margin: 12px; padding: 14px; font-size: 16px; border: none; border-radius: 8px;
+    background: var(--primary); color: var(--white); font-weight: 600;
+  }
+  #btnCreateCollage:disabled { background: #aaaaaa; }
+
+  /* Camera view */
+  #cameraView { background: black; position: relative; }
+  #video {
+    width: 100%; height: 100%; object-fit: cover;
+    transform: scaleX(-1); /* gespiegelte Vorschau, wie bei Selfie-Kameras üblich */
+  }
+  #questionOverlay {
+    position: absolute; top: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.6); color: white; font-weight: 700; font-size: 18px;
+    text-align: center; padding: 20px 16px;
+    padding-top: calc(20px + env(safe-area-inset-top));
+  }
+  #countdownOverlay {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    color: white; font-size: 90px; font-weight: 800;
+  }
+  #cameraControls {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    display: flex; justify-content: center; gap: 24px;
+    padding: 24px; padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  #cameraControls button {
+    padding: 14px 22px; font-size: 16px; border: none; border-radius: 24px; font-weight: 600;
+  }
+  #btnCapture { background: var(--white); color: var(--primary); }
+  #btnCancelCamera { background: rgba(255,255,255,0.25); color: white; }
+  #cameraError { color: white; text-align: center; padding: 24px; }
+
+  /* Admin view */
+  #adminView { background: var(--background); }
+  #adminContent { flex: 1; overflow-y: auto; padding: 16px; }
+  #adminContent label {
+    display: block; font-size: 13px; margin-top: 16px; margin-bottom: 4px; color: #333;
+  }
+  #adminContent textarea {
+    width: 100%; font-size: 14px; padding: 8px; border-radius: 6px; border: 1px solid #ccc;
+    resize: vertical;
+  }
+  #btnSaveQuestions {
+    margin: 16px; padding: 14px; font-size: 16px; border: none; border-radius: 8px;
+    background: var(--primary); color: var(--white); font-weight: 600;
+  }
+
+  /* Result view */
+  #resultView { background: var(--background); align-items: center; justify-content: center; padding: 16px; }
+  #resultImg { max-width: 100%; max-height: 60vh; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+  #resultHint { font-size: 13px; color: #555; text-align: center; margin: 12px 0; max-width: 320px; }
+  .result-buttons { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; }
+  .result-buttons button, .result-buttons a {
+    padding: 14px; font-size: 16px; border: none; border-radius: 8px; font-weight: 600;
+    text-align: center; text-decoration: none; display: block;
+  }
+  #btnShare { background: var(--primary); color: white; }
+  #btnNewRound { background: #555; color: white; }
+  #downloadLink { background: #eee; color: #333; }
+</style>
+</head>
+<body>
+
+  <!-- Grid View -->
+  <div id="gridView" class="view active">
+    <div class="toolbar">
+      <span>Gesichter-Collage</span>
+      <button id="btnAdmin" title="Fragen bearbeiten">⋮</button>
+    </div>
+    <div id="statusText">0 von 9 Fotos aufgenommen</div>
+    <div id="grid"></div>
+    <button id="btnCreateCollage" disabled>Collage erstellen</button>
+  </div>
+
+  <!-- Camera View -->
+  <div id="cameraView" class="view">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="questionOverlay"></div>
+    <div id="countdownOverlay">3</div>
+    <div id="cameraError" style="display:none;"></div>
+    <div id="cameraControls">
+      <button id="btnCancelCamera">Abbrechen</button>
+      <button id="btnCapture">Foto aufnehmen</button>
+    </div>
+  </div>
+
+  <!-- Admin View -->
+  <div id="adminView" class="view">
+    <div class="toolbar">
+      <button id="btnAdminBack">←</button>
+      <span>Fragen bearbeiten</span>
+      <span style="width:30px"></span>
+    </div>
+    <div id="adminContent"></div>
+    <button id="btnSaveQuestions">Speichern</button>
+  </div>
+
+  <!-- Result View -->
+  <div id="resultView" class="view">
+    <img id="resultImg" alt="Collage">
+    <div id="resultHint">
+      Tippe auf "Teilen / Speichern", um das Bild in deinen Fotos zu sichern.
+      Falls der Dialog nicht erscheint: Bild gedrückt halten → "Zu Fotos hinzufügen".
+    </div>
+    <div class="result-buttons">
+      <button id="btnShare">Teilen / Speichern</button>
+      <a id="downloadLink" download="collage.jpg">Als Datei herunterladen</a>
+      <button id="btnNewRound">Neue Runde</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  const TILE_COUNT = 9;
+  const TILE_SIZE = 600;
+  const GRID = 3;
+
+  const DEFAULT_QUESTIONS = [
+    "Wie reagierst du auf eine Gehaltserhöhung?",
+    "Dein Gesicht, wenn der Bus vor deiner Nase abfährt.",
+    "Wie schaust du, wenn du eine Notlüge erzählst?",
+    "Dein Blick beim ersten Schluck Kaffee am Morgen.",
+    "Wie reagierst du auf einen schlechten Wortwitz?",
+    "Dein Gesicht im Standesamt – ja oder nein?",
+    "Wie schaust du, wenn dir jemand die Vorfahrt nimmt?",
+    "Dein Ausdruck beim Öffnen der Stromrechnung.",
+    "Wie sieht dein bestes Pokerface aus?"
+  ];
+
+  const STORAGE_KEY = "facecollage_questions";
+
+  let questions = loadQuestions();
+  let photos = new Array(TILE_COUNT).fill(null); // {blob, url}
+  let currentIndex = -1;
+  let stream = null;
+  let countdownTimer = null;
+
+  // ---------- Persistenz der Fragen ----------
+  function loadQuestions() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (Array.isArray(saved) && saved.length === TILE_COUNT) return saved;
+    } catch (e) { /* ignorieren, Defaults verwenden */ }
+    return DEFAULT_QUESTIONS.slice();
+  }
+  function saveQuestions(qs) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(qs));
+  }
+
+  // ---------- Views umschalten ----------
+  function showView(id) {
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    document.getElementById(id).classList.add("active");
+  }
+
+  // ---------- Grid rendern ----------
+  const gridEl = document.getElementById("grid");
+  const statusEl = document.getElementById("statusText");
+  const btnCreateCollage = document.getElementById("btnCreateCollage");
+
+  function renderGrid() {
+    gridEl.innerHTML = "";
+    for (let i = 0; i < TILE_COUNT; i++) {
+      const tile = document.createElement("div");
+      tile.className = "tile";
+      tile.addEventListener("click", () => openCamera(i));
+
+      if (photos[i]) {
+        const img = document.createElement("img");
+        img.src = photos[i].url;
+        tile.appendChild(img);
+        const check = document.createElement("div");
+        check.className = "tile-check";
+        check.textContent = "✓";
+        tile.appendChild(check);
+      } else {
+        const text = document.createElement("div");
+        text.className = "tile-text";
+        text.textContent = questions[i];
+        tile.appendChild(text);
+      }
+      gridEl.appendChild(tile);
+    }
+    updateStatus();
+  }
+
+  function updateStatus() {
+    const done = photos.filter(p => p !== null).length;
+    statusEl.textContent = done + " von " + TILE_COUNT + " Fotos aufgenommen";
+    btnCreateCollage.disabled = done !== TILE_COUNT;
+  }
+
+  // ---------- Kamera ----------
+  const videoEl = document.getElementById("video");
+  const questionOverlay = document.getElementById("questionOverlay");
+  const countdownOverlay = document.getElementById("countdownOverlay");
+  const cameraError = document.getElementById("cameraError");
+  const btnCapture = document.getElementById("btnCapture");
+  const btnCancelCamera = document.getElementById("btnCancelCamera");
+
+  async function openCamera(index) {
+    currentIndex = index;
+    questionOverlay.textContent = questions[index];
+    cameraError.style.display = "none";
+    btnCapture.style.display = "inline-block";
+    btnCapture.disabled = false;
+    showView("cameraView");
+
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false
+      });
+      videoEl.srcObject = stream;
+    } catch (err) {
+      cameraError.style.display = "block";
+      cameraError.textContent = "Kamera-Zugriff nicht möglich: " + err.message +
+        ". Bitte in den Safari-Einstellungen die Kamera-Berechtigung für diese Seite erlauben.";
+      btnCapture.style.display = "none";
+    }
+  }
+
+  function closeCamera() {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    countdownOverlay.style.display = "none";
+  }
+
+  btnCancelCamera.addEventListener("click", () => {
+    closeCamera();
+    showView("gridView");
+  });
+
+  btnCapture.addEventListener("click", () => {
+    btnCapture.disabled = true;
+    let n = 3;
+    countdownOverlay.style.display = "flex";
+    countdownOverlay.textContent = n;
+    countdownTimer = setInterval(() => {
+      n--;
+      if (n <= 0) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+        countdownOverlay.style.display = "none";
+        capturePhoto();
+      } else {
+        countdownOverlay.textContent = n;
+      }
+    }, 1000);
+  });
+
+  function capturePhoto() {
+    const vw = videoEl.videoWidth, vh = videoEl.videoHeight;
+    if (!vw || !vh) { btnCapture.disabled = false; return; }
+    const size = Math.min(vw, vh);
+    const sx = (vw - size) / 2, sy = (vh - size) / 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = TILE_SIZE;
+    canvas.height = TILE_SIZE;
+    const ctx = canvas.getContext("2d");
+    // Hinweis: ohne Spiegelung gezeichnet, damit das Endergebnis wie ein normales Foto aussieht
+    ctx.drawImage(videoEl, sx, sy, size, size, 0, 0, TILE_SIZE, TILE_SIZE);
+
+    canvas.toBlob((blob) => {
+      if (photos[currentIndex] && photos[currentIndex].url) {
+        URL.revokeObjectURL(photos[currentIndex].url);
+      }
+      const url = URL.createObjectURL(blob);
+      photos[currentIndex] = { blob, url };
+      closeCamera();
+      renderGrid();
+      showView("gridView");
+    }, "image/jpeg", 0.92);
+  }
+
+  // ---------- Collage erstellen ----------
+  btnCreateCollage.addEventListener("click", buildCollage);
+
+  function wrapText(ctx, text, maxWidth) {
+    const words = text.split(" ");
+    const lines = [];
+    let current = "";
+    words.forEach(word => {
+      const test = current ? current + " " + word : word;
+      if (ctx.measureText(test).width > maxWidth && current) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = test;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
+  function drawCaption(ctx, text, x, y, tile) {
+    if (!text) return;
+    const padding = 16;
+    const fontSize = Math.round(tile * 0.045);
+    ctx.font = "bold " + fontSize + "px -apple-system, sans-serif";
+    const maxWidth = tile - padding * 2;
+    const lines = wrapText(ctx, text, maxWidth);
+    const lineHeight = fontSize * 1.25;
+    const bandHeight = lines.length * lineHeight + padding * 2;
+    const bandY = y + tile - bandHeight;
+
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.fillRect(x, bandY, tile, bandHeight);
+
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    lines.forEach((line, i) => {
+      ctx.fillText(line, x + tile / 2, bandY + padding + i * lineHeight);
+    });
+  }
+
+  function buildCollage() {
+    const canvas = document.createElement("canvas");
+    canvas.width = TILE_SIZE * GRID;
+    canvas.height = TILE_SIZE * GRID;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    let loaded = 0;
+    photos.forEach((p, i) => {
+      const img = new Image();
+      img.onload = () => {
+        const row = Math.floor(i / GRID), col = i % GRID;
+        const x = col * TILE_SIZE, y = row * TILE_SIZE;
+        ctx.drawImage(img, x, y, TILE_SIZE, TILE_SIZE);
+        drawCaption(ctx, questions[i], x, y, TILE_SIZE);
+        loaded++;
+        if (loaded === TILE_COUNT) finalizeCollage(canvas);
+      };
+      img.src = p.url;
+    });
+  }
+
+  function finalizeCollage(canvas) {
+    canvas.toBlob((blob) => {
+      const fileName = "collage_" + Date.now() + ".jpg";
+      const file = new File([blob], fileName, { type: "image/jpeg" });
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+      document.getElementById("resultImg").src = dataUrl;
+      const downloadLink = document.getElementById("downloadLink");
+      downloadLink.href = dataUrl;
+      downloadLink.download = fileName;
+
+      const btnShare = document.getElementById("btnShare");
+      btnShare.onclick = async () => {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: "Gesichter-Collage" });
+          } catch (e) { /* Nutzer hat abgebrochen oder Fehler – ignorieren */ }
+        } else {
+          window.open(dataUrl, "_blank");
+        }
+      };
+
+      showView("resultView");
+    }, "image/jpeg", 0.92);
+  }
+
+  document.getElementById("btnNewRound").addEventListener("click", () => {
+    photos.forEach(p => { if (p && p.url) URL.revokeObjectURL(p.url); });
+    photos = new Array(TILE_COUNT).fill(null);
+    renderGrid();
+    showView("gridView");
+  });
+
+  // ---------- Admin ----------
+  const adminContent = document.getElementById("adminContent");
+
+  function renderAdmin() {
+    adminContent.innerHTML = "";
+    questions.forEach((q, i) => {
+      const label = document.createElement("label");
+      label.textContent = "Frage " + (i + 1);
+      const textarea = document.createElement("textarea");
+      textarea.rows = 2;
+      textarea.value = q;
+      textarea.dataset.index = i;
+      adminContent.appendChild(label);
+      adminContent.appendChild(textarea);
+    });
+  }
+
+  document.getElementById("btnAdmin").addEventListener("click", () => {
+    renderAdmin();
+    showView("adminView");
+  });
+  document.getElementById("btnAdminBack").addEventListener("click", () => showView("gridView"));
+
+  document.getElementById("btnSaveQuestions").addEventListener("click", () => {
+    const textareas = adminContent.querySelectorAll("textarea");
+    const updated = questions.slice();
+    textareas.forEach(t => {
+      const idx = parseInt(t.dataset.index, 10);
+      const val = t.value.trim();
+      if (val) updated[idx] = val;
+    });
+    questions = updated;
+    saveQuestions(questions);
+    renderGrid();
+    showView("gridView");
+  });
+
+  // ---------- Start ----------
+  renderGrid();
+})();
+</script>
+</body>
+</html>
